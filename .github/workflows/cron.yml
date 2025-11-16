@@ -1,0 +1,29 @@
+name: Wallet TX Checker
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # Every 5 minutes
+  workflow_dispatch:       # Allows manual run
+
+jobs:
+  check-wallets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run bot
+        run: node bot.js
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          SOURCE_CHANNEL: ${{ secrets.SOURCE_CHANNEL }}
+          ALERT_CHANNEL: ${{ secrets.ALERT_CHANNEL }}
