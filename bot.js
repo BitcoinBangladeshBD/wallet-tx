@@ -9,15 +9,22 @@ const SOURCE_CHANNEL = parseInt(process.env.SOURCE_CHANNEL);
 const ALERT_CHANNEL = parseInt(process.env.ALERT_CHANNEL);
 const WALLET_FILE = './wallets.json';
 const CHAINS_FILE = './chains.json';
+const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-const bot = new TelegramBot(BOT_TOKEN, { polling: false });
+// ============ INIT BOT ============
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
 // Load wallets
 let wallets = fs.existsSync(WALLET_FILE) ? fs.readJsonSync(WALLET_FILE) : [];
 wallets = wallets.map(w => ({ address: w.address || w, lastTx: w.lastTx || {} }));
 
 // Load chains
-let chains = fs.existsSync(CHAINS_FILE) ? fs.readJsonSync(CHAINS_FILE) : [];
+let chains = fs.existsSync(CHAINS_FILE) ? fs.readJsonSync(CHAINS_FILE) : [
+    { name: "Ethereum", explorer: "https://etherscan.io/address/", selector: ".u-label" },
+    { name: "BSC", explorer: "https://bscscan.com/address/", selector: ".u-label" },
+    { name: "Polygon", explorer: "https://polygonscan.com/address/", selector: ".u-label" },
+    { name: "Base", explorer: "https://basescan.org/address/", selector: ".u-label" }
+];
 
 // ============ HELPERS ============
 function saveWallets() {
@@ -33,7 +40,7 @@ async function getTxCount(wallet, chain) {
     try {
         const { data } = await axios.get(chain.explorer + wallet);
         const $ = cheerio.load(data);
-        const txText = $(chain.selector).text();
+        const txText = $(chain.selector).first().text();
         return parseInt(txText.replace(/[^0-9]/g, '') || 0);
     } catch (e) {
         console.error(`Error fetching ${chain.name} tx count for ${wallet}:`, e.message);
@@ -61,29 +68,34 @@ async function sendAlert(wallet, txs, delta) {
     await bot.sendMessage(ALERT_CHANNEL, msg);
 }
 
-// ============ FETCH NEW WALLETS ============
-async function fetchSourceMessages() {
-    try {
-        const updates = await bot.getUpdates(0, 100, 0);
-        for (let u of updates) {
-            if (u.message?.chat.id === SOURCE_CHANNEL) {
-                const walletAddr = extractAddress(u.message.text);
-                if (walletAddr && !wallets.some(w => w.address === walletAddr)) {
-                    wallets.push({ address: walletAddr, lastTx: {} });
-                    saveWallets();
-                    console.log('Saved new wallet:', walletAddr);
-                }
+// ============ REAL-TIME WALLET DETECTION ============
+bot.on('message', async (msg) => {
+    if (msg.chat.id === SOURCE_CHANNEL) {
+        const walletAddr = extractAddress(msg.text);
+        if (walletAddr && !wallets.some(w => w.address === walletAddr)) {
+            wallets.push({ address: walletAddr, lastTx: {} });
+            saveWallets();
+            console.log('Saved new wallet:', walletAddr);
+
+            // Immediately check transactions
+            const txs = await checkWallet({ address: walletAddr, lastTx: {} });
+            const delta = {};
+            for (let chain of chains) {
+                delta[chain.name] = txs[chain.name];
+            }
+            const hasNewTx = Object.values(delta).some(v => v > 0);
+            if (hasNewTx) {
+                await sendAlert(walletAddr, txs, delta);
+                wallets.find(w => w.address === walletAddr).lastTx = txs;
+                saveWallets();
             }
         }
-    } catch (e) {
-        console.error('Error fetching source messages:', e.message);
     }
-}
+});
 
-// ============ MAIN ============
-(async () => {
-    await fetchSourceMessages();
-
+// ============ PERIODIC CHECK FOR EXISTING WALLETS ============
+setInterval(async () => {
+    console.log("Checking all wallets...");
     for (let w of wallets) {
         const txs = await checkWallet(w);
         const delta = {};
@@ -91,7 +103,6 @@ async function fetchSourceMessages() {
             const last = w.lastTx[chain.name] || 0;
             delta[chain.name] = txs[chain.name] - last;
         }
-
         const hasNewTx = Object.values(delta).some(v => v > 0);
         if (hasNewTx) {
             await sendAlert(w.address, txs, delta);
@@ -99,6 +110,7 @@ async function fetchSourceMessages() {
             saveWallets();
         }
     }
+    console.log('Periodic check finished ✅');
+}, CHECK_INTERVAL);
 
-    console.log('GitHub Action run finished ✅');
-})();
+console.log("Bot started ✅ Listening to source channel...");
