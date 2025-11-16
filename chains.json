@@ -1,0 +1,22 @@
+[
+  {
+    "name": "ETH",
+    "explorer": "https://etherscan.io/address/",
+    "selector": "#ContentPlaceHolder1_divSummary .row:nth-child(1) .col-md-8"
+  },
+  {
+    "name": "BSC",
+    "explorer": "https://bscscan.com/address/",
+    "selector": "#ContentPlaceHolder1_divSummary .row:nth-child(1) .col-md-8"
+  },
+  {
+    "name": "Polygon",
+    "explorer": "https://polygonscan.com/address/",
+    "selector": "#ContentPlaceHolder1_divSummary .row:nth-child(1) .col-md-8"
+  },
+  {
+    "name": "Base",
+    "explorer": "https://basescan.org/address/",
+    "selector": "#ContentPlaceHolder1_divSummary .row:nth-child(1) .col-md-8"
+  }
+]
